@@ -8,11 +8,6 @@ GO_VERSION ?= `go version | awk '{print $$3}'`
 MINIMUM_GO_VERSION=1.16.2
 BUILD_FLAGS="-X main.gitCommit=${GIT_COMMIT} -X main.version=${VERSION} -X main.goVersion=${GO_VERSION} -X main.buildDate=${BUILD_DATE}"
 CI_BUILD_FLAGS="-w -extldflags "-static" -X main.gitCommit=${GIT_COMMIT} -X main.version=${VERSION} -X main.goVersion=${GO_VERSION} -X main.buildDate=${BUILD_DATE}"
-LITMUS_URL_OLD="http://localhost:20080/remote.php/webdav"
-LITMUS_URL_NEW="http://localhost:20080/remote.php/dav/files/4c510ada-c86b-4815-8820-42cdf82c3d51"
-LITMUS_USERNAME="einstein"
-LITMUS_PASSWORD="relativity"
-TESTS="basic http copymove props"
 
 TOOLCHAIN		?= $(CURDIR)/toolchain
 GOLANGCI_LINT	?= $(TOOLCHAIN)/golangci-lint
@@ -124,24 +119,6 @@ test-integration: build-ci
 .PHONY: test-benchmark
 test-benchmark:
 	cd tests/benchmark && go test
-
-.PHONY: litmus-test-old
-litmus-test-old: build
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c frontend.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c gateway.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c storage-users.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c users.toml &
-	docker run --rm --network=host -e LITMUS_URL=$(LITMUS_URL_OLD) -e LITMUS_USERNAME=$(LITMUS_USERNAME) -e LITMUS_PASSWORD=$(LITMUS_PASSWORD) -e TESTS=$(TESTS) owncloudci/litmus:latest
-	pkill revad
-
-.PHONY: litmus-test-new
-litmus-test-new: build
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c frontend.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c gateway.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c storage-users.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c users.toml &
-	docker run --rm --network=host -e LITMUS_URL=$(LITMUS_URL_NEW) -e LITMUS_USERNAME=$(LITMUS_USERNAME) -e LITMUS_PASSWORD=$(LITMUS_PASSWORD) -e TESTS=$(TESTS) owncloudci/litmus:latest
-	pkill revad
 
 .PHONY: contrib
 contrib:
