@@ -13,16 +13,42 @@ when:
 # litmus = the standard third-party WebDAV (RFC 4918) conformance suite (Joe Orton / neon).
 # Brings the coverage back to CI (opencloud-eu/reva#247). Shape mirrors
 # cs3api-validator-decomposed.yaml: a detached revad serves WebDAV, a step runs litmus
-# against it by name. litmus is built from source (pinned + checksummed) rather than pulled
-# as a prebuilt image — no third-party image dependency, native arch.
-# Note: revad is built in-pipeline here (self-contained / locally runnable via
-# `woodpecker-cli exec`); the sibling pipelines instead fetch the prebuilt binary from the
-# S3 cache (depends_on: build) — switching to that is the production form.
+# against it by name. litmus is built from source (pinned + checksummed); revad is built
+# in-pipeline so the job is self-contained and runnable with `woodpecker-cli exec`.
+#
+# Two production-form alternatives are provided commented out below, ready to switch on:
+#   1. fetch the prebuilt revad from the S3 cache (like the sibling pipelines) instead of
+#      building it in-pipeline -- see the `fetch-binary` block + `depends_on` below;
+#   2. use an opencloud-eu-published litmus image instead of building litmus from source --
+#      see the alternative in the `litmus` step.
+
+# 1. Production form: depend on the build pipeline and fetch the cached binary (uncomment,
+#    and drop the build-revad step below).
+# depends_on:
+#   - build
+
 steps:
   - name: build-revad
     image: *golang_image
     commands:
       - go build -o cmd/revad/revad ./cmd/revad
+
+  # 1. Production-form alternative to build-revad (commented): fetch the prebuilt revad from
+  #    the CI S3 cache, exactly as cs3api-validator-decomposed.yaml does. Uncomment this,
+  #    remove build-revad, and add the `depends_on: [build]` above.
+  # - name: fetch-binary
+  #   image: minio/mc:RELEASE.2021-10-07T04-19-58Z
+  #   environment:
+  #     AWS_ACCESS_KEY_ID:
+  #       from_secret: cache_s3_access_key
+  #     AWS_SECRET_ACCESS_KEY:
+  #       from_secret: cache_s3_secret_key
+  #     S3_BUCKET:
+  #       from_secret: cache_s3_bucket
+  #     S3_ENDPOINT: 'https://s3.ci.opencloud.eu'
+  #   commands:
+  #     - mc alias set s3 $S3_ENDPOINT $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY
+  #     - mc cp -a s3/$S3_BUCKET/${CI_REPO}/$CI_COMMIT_SHA-$CI_PIPELINE_NUMBER-revad cmd/revad/revad
 
   - name: revad
     image: *golang_image
@@ -60,6 +86,9 @@ steps:
       # Both are candidates for an expected-failures list (cf. ocis run-litmus.py) -- a policy call.
       TESTS: basic copymove http
     commands:
+      # 2. Production-form alternative (commented): if opencloud-eu publishes a litmus image,
+      #    set `image: opencloudeu/litmus` and drop the four build commands below -- the image
+      #    entrypoint runs litmus from the LITMUS_* env. (No such image is published today.)
       # bundled neon needs an XML parser (libxml2); pkg-config lets configure find it
       - apt-get update -qq && apt-get install -y -qq libxml2-dev pkg-config >/dev/null
       - curl -fsSL "https://notroj.github.io/litmus/litmus-$LITMUS_VERSION.tar.gz" -o litmus.tar.gz
