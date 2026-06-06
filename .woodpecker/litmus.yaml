@@ -83,7 +83,7 @@ steps:
       #    lenient on an invalid XML namespace, 207 not 400 -- a litmus-FAQ case; high-unicode:
       #    reva serialises U+10000 as the numeric reference &#65536;, valid XML, not literal).
       #  - locks: reva WebDAV locking is partial (WOPI-only).
-      # Both are candidates for an expected-failures list (cf. ocis run-litmus.py) -- a policy call.
+      # Both are candidates for an expected-failures list -- a policy call.
       TESTS: basic copymove http
     commands:
       # 2. Production-form alternative (commented): if opencloud-eu publishes a litmus image,
