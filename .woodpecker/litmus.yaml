@@ -1,0 +1,53 @@
+variables:
+  - &golang_image 'docker.io/golang:1.25'
+  - &litmus_image 'owncloudci/litmus:latest'
+
+when:
+  - event:
+      - push
+      - manual
+    branch:
+      - ${CI_REPO_DEFAULT_BRANCH}
+      - feature/*
+  - event: pull_request
+
+# litmus = the standard third-party WebDAV (RFC 4918) conformance suite. Brings the
+# coverage back to CI (opencloud-eu/reva#247). Shape mirrors cs3api-validator-decomposed.yaml:
+# a detached revad serves WebDAV, a step runs the litmus container against it by name.
+# Note: revad is built in-pipeline here (self-contained / locally runnable via
+# `woodpecker-cli exec`); the sibling pipelines instead fetch the prebuilt binary from the
+# S3 cache (depends_on: build) — switching to that is the production form.
+steps:
+  - name: build-revad
+    image: *golang_image
+    commands:
+      - go build -o cmd/revad/revad ./cmd/revad
+
+  - name: revad
+    image: *golang_image
+    detach: true
+    commands:
+      - cd tests/oc-integration-tests/local
+      - ../../../cmd/revad/revad -c gateway.toml &
+      - ../../../cmd/revad/revad -c users.toml &
+      - ../../../cmd/revad/revad -c storage-users.toml &
+      - ../../../cmd/revad/revad -c storage-shares.toml &
+      - ../../../cmd/revad/revad -c storage-publiclink.toml &
+      - ../../../cmd/revad/revad -c shares.toml &
+      - ../../../cmd/revad/revad -c permissions-opencloud-ci.toml &
+      - ../../../cmd/revad/revad -c frontend.toml
+
+  - name: wait-for-revad
+    image: docker.io/alpine:3.20
+    commands:
+      - apk add --no-cache curl >/dev/null
+      - 'for i in $(seq 1 90); do code=$(curl -s -o /dev/null -w "%{http_code}" -u einstein:relativity -X PROPFIND -H "Depth: 0" http://revad:20080/remote.php/dav/files/4c510ada-c86b-4815-8820-42cdf82c3d51/); [ "$code" = "207" ] && exit 0; sleep 1; done; echo "revad not ready"; exit 1'
+
+  - name: litmus
+    image: *litmus_image
+    environment:
+      LITMUS_URL: http://revad:20080/remote.php/dav/files/4c510ada-c86b-4815-8820-42cdf82c3d51
+      LITMUS_USERNAME: einstein
+      LITMUS_PASSWORD: relativity
+      # locks omitted (as in ocis CI): reva locking is partial; the locks group is tracked separately.
+      TESTS: basic copymove props http

@@ -129,20 +129,18 @@ test-benchmark:
 litmus-test-old: build
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c frontend.toml &
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c gateway.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c storage-home.toml &
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c storage-users.toml &
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c users.toml &
-	docker run --rm --network=host -e LITMUS_URL=$(LITMUS_URL_OLD) -e LITMUS_USERNAME=$(LITMUS_USERNAME) -e LITMUS_PASSWORD=$(LITMUS_PASSWORD) -e TESTS=$(TESTS) owncloud/litmus:latest
+	docker run --rm --network=host -e LITMUS_URL=$(LITMUS_URL_OLD) -e LITMUS_USERNAME=$(LITMUS_USERNAME) -e LITMUS_PASSWORD=$(LITMUS_PASSWORD) -e TESTS=$(TESTS) owncloudci/litmus:latest
 	pkill revad
 
 .PHONY: litmus-test-new
 litmus-test-new: build
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c frontend.toml &
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c gateway.toml &
-	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c storage-home.toml &
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c storage-users.toml &
 	cd tests/oc-integration-tests/local && ../../../cmd/revad/revad -c users.toml &
-	docker run --rm --network=host -e LITMUS_URL=$(LITMUS_URL_NEW) -e LITMUS_USERNAME=$(LITMUS_USERNAME) -e LITMUS_PASSWORD=$(LITMUS_PASSWORD) -e TESTS=$(TESTS) owncloud/litmus:latest
+	docker run --rm --network=host -e LITMUS_URL=$(LITMUS_URL_NEW) -e LITMUS_USERNAME=$(LITMUS_USERNAME) -e LITMUS_PASSWORD=$(LITMUS_PASSWORD) -e TESTS=$(TESTS) owncloudci/litmus:latest
 	pkill revad
 
 .PHONY: contrib
