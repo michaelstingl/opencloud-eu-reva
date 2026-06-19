@@ -1,0 +1,98 @@
+variables:
+  - &golang_image 'docker.io/golang:1.25'
+
+when:
+  - event:
+      - push
+      - manual
+    branch:
+      - ${CI_REPO_DEFAULT_BRANCH}
+      - feature/*
+  - event: pull_request
+
+# litmus = the standard third-party WebDAV (RFC 4918) conformance suite (Joe Orton / neon).
+# Brings the coverage back to CI (opencloud-eu/reva#247). Shape mirrors
+# cs3api-validator-decomposed.yaml: a detached revad serves WebDAV, a step runs litmus
+# against it by name. litmus is built from source (pinned + checksummed); revad is built
+# in-pipeline so the job is self-contained and runnable with `woodpecker-cli exec`.
+#
+# Two production-form alternatives are provided commented out below, ready to switch on:
+#   1. fetch the prebuilt revad from the S3 cache (like the sibling pipelines) instead of
+#      building it in-pipeline -- see the `fetch-binary` block + `depends_on` below;
+#   2. use an opencloud-eu-published litmus image instead of building litmus from source --
+#      see the alternative in the `litmus` step.
+
+# 1. Production form: depend on the build pipeline and fetch the cached binary (uncomment,
+#    and drop the build-revad step below).
+# depends_on:
+#   - build
+
+steps:
+  - name: build-revad
+    image: *golang_image
+    commands:
+      - go build -o cmd/revad/revad ./cmd/revad
+
+  # 1. Production-form alternative to build-revad (commented): fetch the prebuilt revad from
+  #    the CI S3 cache, exactly as cs3api-validator-decomposed.yaml does. Uncomment this,
+  #    remove build-revad, and add the `depends_on: [build]` above.
+  # - name: fetch-binary
+  #   image: minio/mc:RELEASE.2021-10-07T04-19-58Z
+  #   environment:
+  #     AWS_ACCESS_KEY_ID:
+  #       from_secret: cache_s3_access_key
+  #     AWS_SECRET_ACCESS_KEY:
+  #       from_secret: cache_s3_secret_key
+  #     S3_BUCKET:
+  #       from_secret: cache_s3_bucket
+  #     S3_ENDPOINT: 'https://s3.ci.opencloud.eu'
+  #   commands:
+  #     - mc alias set s3 $S3_ENDPOINT $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY
+  #     - mc cp -a s3/$S3_BUCKET/${CI_REPO}/$CI_COMMIT_SHA-$CI_PIPELINE_NUMBER-revad cmd/revad/revad
+
+  - name: revad
+    image: *golang_image
+    detach: true
+    commands:
+      - cd tests/oc-integration-tests/local
+      - ../../../cmd/revad/revad -c gateway.toml &
+      - ../../../cmd/revad/revad -c users.toml &
+      - ../../../cmd/revad/revad -c storage-users.toml &
+      - ../../../cmd/revad/revad -c storage-shares.toml &
+      - ../../../cmd/revad/revad -c storage-publiclink.toml &
+      - ../../../cmd/revad/revad -c shares.toml &
+      - ../../../cmd/revad/revad -c permissions-opencloud-ci.toml &
+      - ../../../cmd/revad/revad -c frontend.toml
+
+  - name: wait-for-revad
+    image: docker.io/alpine:3.20
+    commands:
+      - apk add --no-cache curl >/dev/null
+      - 'for i in $(seq 1 90); do code=$(curl -s -o /dev/null -w "%{http_code}" -u einstein:relativity -X PROPFIND -H "Depth: 0" http://revad:20080/remote.php/dav/files/4c510ada-c86b-4815-8820-42cdf82c3d51/); [ "$code" = "207" ] && exit 0; sleep 1; done; echo "revad not ready"; exit 1'
+
+  - name: litmus
+    image: *golang_image
+    environment:
+      LITMUS_VERSION: '0.17'
+      LITMUS_SHA256: '686c272ce757cc9d9e83f07ae16ecc83393172b1205559765528d9755eb0221c'
+      LITMUS_URL: http://revad:20080/remote.php/dav/files/4c510ada-c86b-4815-8820-42cdf82c3d51
+      LITMUS_USERNAME: einstein
+      LITMUS_PASSWORD: relativity
+      # Gate on the suites that pass cleanly under litmus 0.17. Not gated yet:
+      #  - props: 31/33 pass; 2 strictness deltas in litmus 0.17 (propfind_invalid2: reva is
+      #    lenient on an invalid XML namespace, 207 not 400 -- a litmus-FAQ case; high-unicode:
+      #    reva serialises U+10000 as the numeric reference &#65536;, valid XML, not literal).
+      #  - locks: reva WebDAV locking is partial (WOPI-only).
+      # Both are candidates for an expected-failures list -- a policy call.
+      TESTS: basic copymove http
+    commands:
+      # 2. Production-form alternative (commented): if opencloud-eu publishes a litmus image,
+      #    set `image: opencloudeu/litmus` and drop the four build commands below -- the image
+      #    entrypoint runs litmus from the LITMUS_* env. (No such image is published today.)
+      # bundled neon needs an XML parser (libxml2); pkg-config lets configure find it
+      - apt-get update -qq && apt-get install -y -qq libxml2-dev pkg-config >/dev/null
+      - curl -fsSL "https://notroj.github.io/litmus/litmus-$LITMUS_VERSION.tar.gz" -o litmus.tar.gz
+      - 'echo "$LITMUS_SHA256  litmus.tar.gz" | sha256sum -c -'
+      - tar xzf litmus.tar.gz
+      - cd "litmus-$LITMUS_VERSION" && ./configure >/dev/null && make >/dev/null && make install >/dev/null
+      - 'TESTS="$TESTS" litmus "$LITMUS_URL" "$LITMUS_USERNAME" "$LITMUS_PASSWORD"'
